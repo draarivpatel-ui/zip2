@@ -35,6 +35,13 @@ pub(crate) struct ZipRawValues {
     pub(crate) crc32: u32,
     pub(crate) compressed_size: u64,
     pub(crate) uncompressed_size: u64,
+    /// The copied entry's own "version needed to extract", for a copy that keeps it.
+    /// `0` derives the version from the entry's properties.
+    pub(crate) version_needed_to_extract: u16,
+    /// The copied entry's general purpose flags, for a copy that keeps the bits
+    /// describing the stored bytes. The bits the writer manages (encryption,
+    /// data descriptor, language encoding, masked local values) are dropped.
+    pub(crate) flags: u16,
     /// The copied entry's own language encoding flag, for a copy that keeps the
     /// entry's name bytes as stored. `None` derives the flag from the name.
     pub(crate) language_encoding: Option<bool>,
@@ -59,6 +66,9 @@ pub struct ZipFileData {
     pub system: System,
     /// Specification version
     pub version_made_by: u8,
+    /// Specification version needed to extract, as read from the source header.
+    /// `0` for a new file, whose version is derived from its properties.
+    pub(crate) version_needed_to_extract: u16,
     /// ZIP flags
     pub flags: ZipFileFlags,
     /// Compression method used to store the file (get the inner compression method if encryption is used)
@@ -421,7 +431,8 @@ impl ZipFileData {
         get_unix_mode(self.system, self.external_attributes)
     }
 
-    /// PKZIP version needed to open this file (from APPNOTE 4.4.3.2).
+    /// PKZIP version needed to open this file (from APPNOTE 4.4.3.2). For a file
+    /// read from an archive, at least the version its header recorded.
     pub fn version_needed(&self) -> u16 {
         get_version_needed(
             self.compression_method,
@@ -430,7 +441,17 @@ impl ZipFileData {
             self.large_file,
             self.unix_mode(),
         )
+        .max(self.version_needed_to_extract)
     }
+
+    /// General purpose flag bits a raw copy must not carry over: they are
+    /// managed by the writer (encryption, data descriptor, UTF-8 names) or
+    /// describe a central directory state that cannot be kept entry-wise
+    /// (masked local values).
+    const RAW_COPY_DROPPED_FLAGS: u16 = ZipFlags::Encrypted.as_u16()
+        | ZipFlags::UsingDataDescriptor.as_u16()
+        | ZipFlags::LanguageEncoding.as_u16()
+        | ZipFlags::Masked.as_u16();
 
     pub(crate) fn initialize_local_block<T: FileOptionExtension>(
         file_name_raw: &[u8],
@@ -505,9 +526,15 @@ impl ZipFileData {
         if std::str::from_utf8(file_name_raw).is_ok() && !file_name_raw.is_ascii() {
             flags |= ZipFlags::LanguageEncoding.as_u16();
         }
+        // A raw copy keeps the source's general purpose bits that describe the
+        // stored bytes (compression level, patched data, ...), which do not
+        // change. The bits the writer manages are set from the options and the
+        // copy's own name instead.
+        flags |= raw_values.flags & !Self::RAW_COPY_DROPPED_FLAGS;
         let mut local_block = ZipFileData {
             system,
             version_made_by: DEFAULT_VERSION,
+            version_needed_to_extract: raw_values.version_needed_to_extract,
             flags,
             compression_method,
             last_modified_time: Some(options.last_modified_time),
@@ -548,10 +575,12 @@ impl ZipFileData {
         } = block;
 
         let compression_method = CompressionMethod::parse_from_u16(compression_method);
+        let version_needed_to_extract = version_made_by;
         let (version_made_by, system) = System::extract_bytes(version_made_by);
         let data = ZipFileData {
             system,
             version_made_by,
+            version_needed_to_extract,
             flags: ZipFileFlags(flags),
             compression_method,
             last_modified_time: DateTime::try_from_msdos(last_mod_date, last_mod_time).ok(),

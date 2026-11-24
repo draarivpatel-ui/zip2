@@ -211,7 +211,7 @@ fn central_header_to_zip_file_inner<R: Read>(
     let ZipCentralEntryBlock {
         // magic,
         version_made_by,
-        // version_to_extract,
+        version_to_extract,
         flags,
         compression_method,
         last_mod_time,
@@ -260,6 +260,7 @@ fn central_header_to_zip_file_inner<R: Read>(
     let mut result = ZipFileData {
         system,
         version_made_by,
+        version_needed_to_extract: version_to_extract,
         compression_method: CompressionMethod::parse_from_u16(compression_method),
         last_modified_time: DateTime::try_from_msdos(last_mod_date, last_mod_time).ok(),
         crc32,

@@ -140,7 +140,13 @@ pub(crate) fn get_flags(flags: ZipFileFlags) -> u16 {
 
     let encrypted_bit: u16 = if flags.is_encrypted() { 1u16 << 0 } else { 0 };
 
-    utf8_bit | using_data_descriptor_bit | encrypted_bit
+    // The remaining bits describe the stored bytes; a raw copy keeps them.
+    let stored_data_bits = flags.0
+        & !(ZipFlags::Encrypted.as_u16()
+            | ZipFlags::UsingDataDescriptor.as_u16()
+            | ZipFlags::LanguageEncoding.as_u16());
+
+    utf8_bit | using_data_descriptor_bit | encrypted_bit | stored_data_bits
 }
 
 #[cfg(test)]

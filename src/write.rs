@@ -752,6 +752,8 @@ impl<W: Write + Seek> ZipWriter<W> {
             crc32: 0,
             compressed_size: 0,
             uncompressed_size: 0,
+            version_needed_to_extract: 0,
+            flags: 0,
             language_encoding: None,
             encrypted_with_descriptor: None,
             file_comment_raw: None,
@@ -1338,6 +1340,8 @@ impl<W: Write + Seek> ZipWriter<W> {
             crc32: file.crc32(),
             compressed_size: file.compressed_size(),
             uncompressed_size: file.size(),
+            version_needed_to_extract: file.data.version_needed_to_extract,
+            flags: file.flags().0,
             language_encoding,
             encrypted_with_descriptor: file
                 .encrypted()
@@ -1602,6 +1606,8 @@ impl<W: Write + Seek> ZipWriter<W> {
             crc32,
             compressed_size,
             uncompressed_size,
+            version_needed_to_extract: 0,
+            flags: 0,
             language_encoding: None,
             encrypted_with_descriptor: None,
             file_comment_raw: None,
